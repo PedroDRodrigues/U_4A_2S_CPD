@@ -53,7 +53,7 @@ char ***gen_initial_grid(long long N, float density, int input_seed) {
             for (z = 0; z < N; z++)
                 if (r4_uni() < density)
                     grid[x][y][z] = (int)(r4_uni() * N_SPECIES) + 1;
-
+    
     return grid;
 }
 
@@ -156,10 +156,28 @@ void simulation(char ***grid, long long N, int generations) {
             }
         }
     }
+
+    /* Only for debug */
+    for (int gen = 0; gen < generations; gen++) {
+        printf("Generation %d ------------------------------\n", gen);
+        for (int z = 0; z < N; z++) {
+            printf("Layer %d:\n", z);
+            for (int y = 0; y < N; y++) {
+                for (int x = 0; x < N; x++) {
+                    if (grid[x][y][z] != 0) {
+                        printf("%d ", grid[x][y][z]);
+                    } 
+                }
+                printf("\n");
+            }
+        }
+    }
+    /* Delete this before delivvery date */
+    
     free_grid(next_grid, N);
 }
 
-void print_result(char ***grid, long long N) {
+void print_result(char ***grid, long long N) {   
     // Count population for each species over all generations
     int max_species_count[N_SPECIES + 1] = {0};  // Initialize to 0
     int max_generation[N_SPECIES + 1] = {0};     // Initialize to 0
@@ -195,14 +213,21 @@ int main(int argc, char *argv[]) {
     float density = atof(argv[3]);
     int seed = atoi(argv[4]);
 
+    if (generations <= 0 || N <= 0 || density < 0 || density > 1) {
+        fprintf(stderr, "Invalid input\n");
+        exit(EXIT_FAILURE);
+    }
+
     // Generate initial grid
     char ***grid = gen_initial_grid(N, density, seed);
 
     // Simulate game of life
     simulation(grid, N, generations);
 
-    // Output results
+    // Output results - without debug
     print_result(grid, N);
+    // Output results - with debug
+    //print_result(grid, N, generations);
 
     // Free memory
     free_grid(grid, N);
