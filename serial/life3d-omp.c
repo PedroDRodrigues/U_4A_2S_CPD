@@ -74,6 +74,8 @@ int count_neighbors(char ***grid, long long N, int x, int y, int z) {
     int count = 0;
     int dx, dy, dz;
 
+    printf("Counting neighbors for cell (%d, %d, %d)\n", x, y, z);
+
     for (dx = -1; dx <= 1; dx++) {
         for (dy = -1; dy <= 1; dy++) {
             for (dz = -1; dz <= 1; dz++) {
@@ -86,9 +88,9 @@ int count_neighbors(char ***grid, long long N, int x, int y, int z) {
                     count++;
             }
         }
-        
     }
 
+    printf("Count: %d\n", count);
     return count;
 }
 
@@ -121,7 +123,38 @@ void evolve_cell(char ***grid, char ***next_grid, long long N, int x, int y, int
                     dominant_species = i;
                 }
             }
+            printf("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA Dominant species: %d\n", dominant_species);
+            // print next_grid
+            printf("1AAAAAAAAAAAAAAAAAAAAAAAAAAANext grid:\n");
+            for(int i = 0; i < N; i++) {
+                printf("Layer %d:\n", i);
+                for(int j = 0; j < N; j++) {
+                    for(int k = 0; k < N; k++) {
+                        if (next_grid[i][j][k] != 0)
+                            printf("%d ", next_grid[i][j][k]);
+                        else 
+                            printf("  ");
+                    }
+                    printf("\n");
+                }
+                printf("\n");
+            }
             next_grid[x][y][z] = dominant_species;
+            // print next_grid
+            printf("2AAAAAAAAAAAAAAAAAAAAAAAAAAANext grid:\n");
+            for(int i = 0; i < N; i++) {
+                printf("Layer %d:\n", i);
+                for(int j = 0; j < N; j++) {
+                    for(int k = 0; k < N; k++) {
+                        if (next_grid[i][j][k] != 0)
+                            printf("%d ", next_grid[i][j][k]);
+                        else 
+                            printf("  ");
+                    }
+                    printf("\n");
+                }
+                printf("\n");
+            }
         } else {
             next_grid[x][y][z] = 0;  // Remain empty
         }
@@ -139,21 +172,22 @@ void evolve_cell(char ***grid, char ***next_grid, long long N, int x, int y, int
 void simulation(char ***grid, long long N, int generations) {
     char ***next_grid = gen_initial_grid(N, 0.0, 0);  // Temporary grid for next generation
 
-    for (int gen = 0; gen < generations; gen++) {
+    for (int gen = 1; gen < generations; gen++) {
         printf("Generation %d ------------------------------\n", gen);
         for (int z = 0; z < N; z++) {
             printf("Layer %d:\n", z);
             for (int y = 0; y < N; y++) {
                 for (int x = 0; x < N; x++) {
-                    if (grid[x][y][z] != 0) {
+                    if (grid[x][y][z] != 0) 
                         printf("%d ", grid[x][y][z]);
-                    } 
+                    else 
+                        printf("  ");
                 }
                 printf("\n");
             }
         }
     }
-    
+
     for (int gen = 0; gen < generations; gen++) {
         // Evolve each cell
         for (int x = 0; x < N; x++) {
@@ -172,8 +206,6 @@ void simulation(char ***grid, long long N, int generations) {
             }
         }
     }
-
-    /* Delete this before delivvery date */
     
     free_grid(next_grid, N);
 }
@@ -223,10 +255,15 @@ int main(int argc, char *argv[]) {
     char ***grid = gen_initial_grid(N, density, seed);
 
     // print initial grid
+    printf("Generation 0 ------------------------------\n");
     for(int i = 0; i < N; i++) {
+        printf("Layer %d:\n", i);
         for(int j = 0; j < N; j++) {
             for(int k = 0; k < N; k++) {
-                printf("%d ", grid[i][j][k]);
+                if (grid[i][j][k] != 0)
+                    printf("%d ", grid[i][j][k]);
+                else 
+                    printf("  ");
             }
             printf("\n");
         }
