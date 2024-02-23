@@ -70,7 +70,7 @@ void free_grid(char ***grid, long long N) {
     free(grid);
 }
 
-int count_neighbors(char ***grid, long long N, int x, int y, int z, int species) {
+int count_neighbors(char ***grid, long long N, int x, int y, int z) {
     int count = 0;
     int dx, dy, dz;
 
@@ -82,10 +82,11 @@ int count_neighbors(char ***grid, long long N, int x, int y, int z, int species)
                 int nx = (x + dx + N) % N;
                 int ny = (y + dy + N) % N;
                 int nz = (z + dz + N) % N;
-                if (grid[nx][ny][nz] == species)
+                if (grid[nx][ny][nz] != 0)
                     count++;
             }
         }
+        
     }
 
     return count;
@@ -93,7 +94,7 @@ int count_neighbors(char ***grid, long long N, int x, int y, int z, int species)
 
 void evolve_cell(char ***grid, char ***next_grid, long long N, int x, int y, int z) {
     int species = grid[x][y][z];
-    int neighbor_count = count_neighbors(grid, N, x, y, z, species);
+    int neighbor_count = count_neighbors(grid, N, x, y, z);
     
     if (species == 0) {  // Empty cell
         if (neighbor_count >= 7 && neighbor_count <= 10) {
@@ -137,6 +138,21 @@ void evolve_cell(char ***grid, char ***next_grid, long long N, int x, int y, int
 
 void simulation(char ***grid, long long N, int generations) {
     char ***next_grid = gen_initial_grid(N, 0.0, 0);  // Temporary grid for next generation
+
+    for (int gen = 0; gen < generations; gen++) {
+        printf("Generation %d ------------------------------\n", gen);
+        for (int z = 0; z < N; z++) {
+            printf("Layer %d:\n", z);
+            for (int y = 0; y < N; y++) {
+                for (int x = 0; x < N; x++) {
+                    if (grid[x][y][z] != 0) {
+                        printf("%d ", grid[x][y][z]);
+                    } 
+                }
+                printf("\n");
+            }
+        }
+    }
     
     for (int gen = 0; gen < generations; gen++) {
         // Evolve each cell
@@ -157,21 +173,6 @@ void simulation(char ***grid, long long N, int generations) {
         }
     }
 
-    /* Only for debug */
-    for (int gen = 0; gen < generations; gen++) {
-        printf("Generation %d ------------------------------\n", gen);
-        for (int z = 0; z < N; z++) {
-            printf("Layer %d:\n", z);
-            for (int y = 0; y < N; y++) {
-                for (int x = 0; x < N; x++) {
-                    if (grid[x][y][z] != 0) {
-                        printf("%d ", grid[x][y][z]);
-                    } 
-                }
-                printf("\n");
-            }
-        }
-    }
     /* Delete this before delivvery date */
     
     free_grid(next_grid, N);
@@ -220,6 +221,17 @@ int main(int argc, char *argv[]) {
 
     // Generate initial grid
     char ***grid = gen_initial_grid(N, density, seed);
+
+    // print initial grid
+    for(int i = 0; i < N; i++) {
+        for(int j = 0; j < N; j++) {
+            for(int k = 0; k < N; k++) {
+                printf("%d ", grid[i][j][k]);
+            }
+            printf("\n");
+        }
+        printf("\n");
+    }
 
     // Simulate game of life
     simulation(grid, N, generations);
