@@ -212,12 +212,8 @@ int main(int argc, char *argv[]) {
     // Generate initial grid
     char ***grid = gen_initial_grid(N, density, seed);
 
-    double exec_time;
-    exec_time = -omp_get_wtime();
     // Simulate game of life
     simulation(grid, N, generations);
-    exec_time += omp_get_wtime();
-    fprintf(stderr, "%.1fs\n", exec_time);
 
     // Output results - without debug
     print_result(grid, N);
