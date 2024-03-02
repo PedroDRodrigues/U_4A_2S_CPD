@@ -33,6 +33,7 @@ char ***gen_initial_grid(long long N, float density, int input_seed) {
         exit(1);
     }
 
+    #pragma omp parallel for private(x, y, z) shared(grid, density, input_seed)
     for (x = 0; x < N; x++) {
         grid[x] = (char **) malloc(N * sizeof(char *));
         if (grid[x] == NULL) {
@@ -54,16 +55,23 @@ char ***gen_initial_grid(long long N, float density, int input_seed) {
     int species_counts[N_SPECIES + 1] = {0};
 
     init_r4uni(input_seed);
+    //ESTE AQUI E O QUE ESTA ERRADO
+    // esse um metodo que e atraves do get_number_threads
+    //#pragma omp parallel for private(x, y, z) shared(grid, density, species_counts)
     for (x = 0; x < N; x++)
         for (y = 0; y < N; y++)
             for (z = 0; z < N; z++)
                 if (r4_uni() < density)
                 {
                     grid[x][y][z] = (char)(r4_uni() * N_SPECIES) + 1;
+                    #pragma omp atomic
                     species_counts[grid[x][y][z]]++;
                     if (species_counts[grid[x][y][z]] > max_species_count_list[grid[x][y][z]]) {
-                        max_species_count_list[grid[x][y][z]] = species_counts[grid[x][y][z]];
-                        max_generation[grid[x][y][z]] = 0;
+                        #pragma omp critical
+                        {
+                            max_species_count_list[grid[x][y][z]] = species_counts[grid[x][y][z]];
+                            max_generation[grid[x][y][z]] = 0;
+                        }
                     }
                 }
     
@@ -74,6 +82,7 @@ void free_grid(char ***grid, long long N) {
     if (grid == NULL)
         return;
 
+    #pragma omp parallel for
     for (int x = 0; x < N; x++) {
         if (grid[x] == NULL)
             continue;
@@ -108,14 +117,11 @@ int count_neighbors(char ***grid, long long N, int x, int y, int z) {
 void evolve_cell(char ***grid, char ***next_grid, long long N, int x, int y, int z, int generation, int count_per_generation[] ) {
     int species = grid[x][y][z];
     int neighbor_count = count_neighbors(grid, N, x, y, z);
-    /*if (generation == 0 && x == 1 && y == 0 && z == 0) {
-        printf("neighbours = %d\n", neighbor_count);
-        printf("species = %d\n", species);
-    }*/
+
     if (species == 0) {  // Empty cell
         if (neighbor_count >= 7 && neighbor_count <= 10) {
-            // Reproduction
             int species_counts[N_SPECIES + 1] = {0};  // Initialize to 0
+            #pragma omp parallel for
             for (int dx = -1; dx <= 1; dx++) {
                 for (int dy = -1; dy <= 1; dy++) {
                     for (int dz = -1; dz <= 1; dz++) {
@@ -125,6 +131,7 @@ void evolve_cell(char ***grid, char ***next_grid, long long N, int x, int y, int
                         int ny = (y + dy + N) % N;
                         int nz = (z + dz + N) % N;
                         int neighbor_species = grid[nx][ny][nz];
+                        #pragma omp atomic
                         species_counts[neighbor_species]++;
                     }
                 }
@@ -143,20 +150,24 @@ void evolve_cell(char ***grid, char ***next_grid, long long N, int x, int y, int
         }
     } else {  // Occupied cell
         if (neighbor_count <= 4 || neighbor_count > 13) {
-            // Underpopulation or Overcrowding
             next_grid[x][y][z] = 0;  // Die
         } else {
-            // Survive
-            next_grid[x][y][z] = species;
+            next_grid[x][y][z] = species;  // Survive
         }
     }
+
+    #pragma omp atomic
     count_per_generation[next_grid[x][y][z]]++;
     if (count_per_generation[next_grid[x][y][z]] > max_species_count_list[next_grid[x][y][z]])
     {
-        max_species_count_list[next_grid[x][y][z]] = count_per_generation[next_grid[x][y][z]];
-        max_generation[next_grid[x][y][z]] = generation;
+        #pragma omp critical
+        {
+            max_species_count_list[next_grid[x][y][z]] = count_per_generation[next_grid[x][y][z]];
+            max_generation[next_grid[x][y][z]] = generation;
+        }
     }
 }
+
 
 void simulation(char ***grid, long long N, int generations) {
     char ***next_grid = gen_initial_grid(N, 0.0, 0);  // Temporary grid for next generation
@@ -166,6 +177,7 @@ void simulation(char ***grid, long long N, int generations) {
         // Evolve each cell
         int count_per_generation[N_SPECIES + 1] = {0};
         
+        #pragma omp parallel for collapse(3) shared(grid, next_grid, N, gen, count_per_generation)        
         for (int x = 0; x < N; x++) {
             for (int y = 0; y < N; y++) {
                 for (int z = 0; z < N; z++) {
@@ -173,7 +185,9 @@ void simulation(char ***grid, long long N, int generations) {
                 }
             }
         }
+
         // Copy next_grid back to grid for next generation
+        #pragma omp parallel for collapse(3)
         for (int x = 0; x < N; x++) {
             for (int y = 0; y < N; y++) {
                 for (int z = 0; z < N; z++) {
