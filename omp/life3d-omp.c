@@ -128,7 +128,6 @@ void evolve_cell(char ***grid, char ***next_grid, long long N, int x, int y, int
                         int ny = (y + dy + N) % N;
                         int nz = (z + dz + N) % N;
                         int neighbor_species = grid[nx][ny][nz];
-                        //#pragma omp atomic
                         species_counts[neighbor_species]++;
                     }
                 }
@@ -152,17 +151,8 @@ void evolve_cell(char ***grid, char ***next_grid, long long N, int x, int y, int
             next_grid[x][y][z] = species;  // Survive
         }
     }
-
-    //#pragma omp atomic
+    
     count_per_generation[next_grid[x][y][z]]++;
-    if (count_per_generation[next_grid[x][y][z]] > max_species_count_list[next_grid[x][y][z]])
-    {
-        //#pragma omp critical
-        {
-            max_species_count_list[next_grid[x][y][z]] = count_per_generation[next_grid[x][y][z]];
-            max_generation[next_grid[x][y][z]] = generation;
-        }
-    }
 }
 
 void simulation(char ***grid, long long N, int generations) {
