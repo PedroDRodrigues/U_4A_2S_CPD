@@ -119,7 +119,6 @@ void evolve_cell(char ***grid, char ***next_grid, long long N, int x, int y, int
     if (species == 0) {  // Empty cell
         if (neighbor_count >= 7 && neighbor_count <= 10) {
             int species_counts[N_SPECIES + 1] = {0};  // Initialize to 0
-            //#pragma omp parallel for 
             for (int dx = -1; dx <= 1; dx++) {
                 for (int dy = -1; dy <= 1; dy++) {
                     for (int dz = -1; dz <= 1; dz++) {
@@ -165,37 +164,6 @@ void evolve_cell(char ***grid, char ***next_grid, long long N, int x, int y, int
         }
     }
 }
-
-
-/*void simulation(char ***grid, long long N, int generations) {
-    char ***next_grid = gen_initial_grid(N, 0.0, 0);  // Temporary grid for next generation
-
-    for (int gen = 1; gen <= generations; gen++) {
-        // Evolve each cell
-        int count_per_generation[N_SPECIES + 1] = {0};
-
-        #pragma omp parallel for collapse(3) shared(grid, next_grid, N, gen, count_per_generation)
-        for (int x = 0; x < N; x++) {
-            for (int y = 0; y < N; y++) {
-                for (int z = 0; z < N; z++) {
-                    evolve_cell(grid, next_grid, N, x, y, z, gen, count_per_generation);
-                }
-            }
-        }
-
-        // Copy next_grid back to grid for next generation
-        #pragma omp parallel for collapse(3)
-        for (int x = 0; x < N; x++) {
-            for (int y = 0; y < N; y++) {
-                for (int z = 0; z < N; z++) {
-                    grid[x][y][z] = next_grid[x][y][z];
-                }
-            }
-        }
-    }
-    
-    free_grid(next_grid, N);
-}*/
 
 void simulation(char ***grid, long long N, int generations) {
     char ***next_grid = gen_initial_grid(N, 0.0, 0);  // Temporary grid for next generation
