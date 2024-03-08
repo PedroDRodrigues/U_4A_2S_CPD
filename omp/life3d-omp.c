@@ -166,7 +166,8 @@ void simulation(char ***grid, long long N, int generations) {
         {
             int private_count_per_generation[N_SPECIES + 1] = {0}; // Declare private array for each thread
             
-            #pragma omp for collapse(3) // Distribute loop iterations among threads
+            // Distribute loop iterations among threads
+            #pragma omp for collapse(3)  
             for (int x = 0; x < N; x++) {
                 for (int y = 0; y < N; y++) {
                     for (int z = 0; z < N; z++) {
@@ -185,7 +186,7 @@ void simulation(char ***grid, long long N, int generations) {
         }
         
         // Copy next_grid back to grid for next generation
-        #pragma omp parallel for collapse(3) // Distribute loop iterations among threads
+        #pragma omp parallel for // Distribute loop iterations among threads
         for (int x = 0; x < N; x++) {
             for (int y = 0; y < N; y++) {
                 for (int z = 0; z < N; z++) {
@@ -207,7 +208,7 @@ void simulation(char ***grid, long long N, int generations) {
         }
     }
     
-    free_grid(next_grid, N);
+    free_grid(next_grid, N);   
 }
 
 void print_result(char ***grid, long long N) {   
