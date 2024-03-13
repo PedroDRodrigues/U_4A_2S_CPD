@@ -54,6 +54,7 @@ char ***gen_initial_grid(long long N, float density, int input_seed) {
     int species_counts[N_SPECIES + 1] = {0};
 
     init_r4uni(input_seed);
+    // THREAD UNSAFE
     for (x = 0; x < N; x++)
         for (y = 0; y < N; y++)
             for (z = 0; z < N; z++)
@@ -108,13 +109,9 @@ int count_neighbors(char ***grid, long long N, int x, int y, int z) {
 void evolve_cell(char ***grid, char ***next_grid, long long N, int x, int y, int z, int generation, int count_per_generation[] ) {
     int species = grid[x][y][z];
     int neighbor_count = count_neighbors(grid, N, x, y, z);
-    /*if (generation == 0 && x == 1 && y == 0 && z == 0) {
-        printf("neighbours = %d\n", neighbor_count);
-        printf("species = %d\n", species);
-    }*/
+
     if (species == 0) {  // Empty cell
         if (neighbor_count >= 7 && neighbor_count <= 10) {
-            // Reproduction
             int species_counts[N_SPECIES + 1] = {0};  // Initialize to 0
             for (int dx = -1; dx <= 1; dx++) {
                 for (int dy = -1; dy <= 1; dy++) {
@@ -143,36 +140,36 @@ void evolve_cell(char ***grid, char ***next_grid, long long N, int x, int y, int
         }
     } else {  // Occupied cell
         if (neighbor_count <= 4 || neighbor_count > 13) {
-            // Underpopulation or Overcrowding
             next_grid[x][y][z] = 0;  // Die
         } else {
-            // Survive
-            next_grid[x][y][z] = species;
+            next_grid[x][y][z] = species;  // Survive
         }
     }
+    
     count_per_generation[next_grid[x][y][z]]++;
-    if (count_per_generation[next_grid[x][y][z]] > max_species_count_list[next_grid[x][y][z]])
-    {
-        max_species_count_list[next_grid[x][y][z]] = count_per_generation[next_grid[x][y][z]];
-        max_generation[next_grid[x][y][z]] = generation;
-    }
 }
 
 void simulation(char ***grid, long long N, int generations) {
     char ***next_grid = gen_initial_grid(N, 0.0, 0);  // Temporary grid for next generation
 
-
     for (int gen = 1; gen <= generations; gen++) {
         // Evolve each cell
-        int count_per_generation[N_SPECIES + 1] = {0};
+        int global_count_per_generation[N_SPECIES + 1] = {0}; // Initialize a global array for reduction
+        int private_count_per_generation[N_SPECIES + 1] = {0}; // Declare private array for each thread
         
         for (int x = 0; x < N; x++) {
             for (int y = 0; y < N; y++) {
                 for (int z = 0; z < N; z++) {
-                    evolve_cell(grid, next_grid, N, x, y, z, gen, count_per_generation);
+                    evolve_cell(grid, next_grid, N, x, y, z, gen, private_count_per_generation);
                 }
             }
         }
+        
+        // Accumulate private counts into global array using a critical section
+        for (int i = 1; i <= N_SPECIES; i++) {
+            global_count_per_generation[i] += private_count_per_generation[i];
+        }
+        
         // Copy next_grid back to grid for next generation
         for (int x = 0; x < N; x++) {
             for (int y = 0; y < N; y++) {
@@ -181,9 +178,17 @@ void simulation(char ***grid, long long N, int generations) {
                 }
             }
         }
+        
+        // Update max_species_count_list and max_generation using global_count_per_generation
+        for (int i = 1; i <= N_SPECIES; i++) {
+            if (global_count_per_generation[i] > max_species_count_list[i]) {
+                max_species_count_list[i] = global_count_per_generation[i];
+                max_generation[i] = gen;
+            }
+        }
     }
     
-    free_grid(next_grid, N);
+    free_grid(next_grid, N);   
 }
 
 void print_result(char ***grid, long long N) {   
