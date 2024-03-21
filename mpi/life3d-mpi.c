@@ -10,6 +10,13 @@ unsigned int seed;
 int max_species_count_list[N_SPECIES + 1] = {0};  // Initialize to 0
 int max_generation[N_SPECIES + 1] = {0};     // Initialize to 0
 
+enum FrameType {
+    NEXT,
+    PREVIOUS
+};
+
+int global_rank;
+
 void init_r4uni(int input_seed) {
     seed = input_seed + 987654321;
 }
@@ -24,10 +31,85 @@ float r4_uni() {
     return 0.5 + 0.2328306e-09 * (seed_in + (int) seed);
 }
 
-char ***gen_initial_grid(long long N, float density, int input_seed) {
+int lower_bound(int rank, int local_size)
+{
+    return rank*local_size;
+}
+
+int upper_bound(int rank, int local_size)
+{
+    return (rank + 1) * local_size;
+}
+
+char ***alocate_grid(long long N, int number_of_nodes)
+{
+    int x, y;
+    char ***grid;
+
+    int global_N = N * number_of_nodes;
+    grid = (char ***) malloc(N * sizeof(char **));
+    if (grid == NULL) {
+        fprintf(stderr, "Failed to allocate memory for grid\n");
+        exit(1);
+    }
+
+    #pragma omp parallel for private(x, y) shared(grid)
+    for (x = 0; x < N; x++) {
+        grid[x] = (char **) malloc(global_N * sizeof(char *));
+        if (grid[x] == NULL) {
+            fprintf(stderr, "Failed to allocate memory for grid\n");
+            exit(1);
+        }
+
+        grid[x][0] = (char *) calloc(global_N * global_N, sizeof(char));
+        if (grid[x][0] == NULL) {
+            fprintf(stderr, "Failed to allocate memory for grid\n");
+            exit(1);
+        }
+
+        for (y = 1; y < global_N; y++) {
+            // fprintf(stdout, "rank=%d no loop antes\n", rank);
+            grid[x][y] = grid[x][0] + y * global_N;
+            // fprintf(stdout, "rank=%d no loop depois\n", rank);
+        }
+    }
+    return grid;
+}
+
+char **allocate_frame(int global_N) {
+    char *data = (char *)calloc(global_N*global_N, sizeof(char));
+    char **frame= (char **)malloc(global_N*sizeof(char*));
+    for (char i=0; i<global_N; i++)
+        frame[i] = &(data[global_N*i]);
+
+    return frame;
+}
+
+// char **allocate_frame(int global_N)
+// {
+//     char **frame = (char **) malloc(global_N * sizeof(char *));
+
+//     if (frame == NULL) {
+//         fprintf(stderr, "Failed to allocate memory for grid\n");
+//         exit(1);
+//     }
+
+//     for (int y = 0; y < global_N; y++)
+//     {
+//         frame[y] = (char *) calloc(global_N, sizeof(char));
+//         if (frame[y] == NULL) {
+//             fprintf(stderr, "Failed to allocate memory for grid\n");
+//             exit(1);
+//         }
+//     }
+//     return frame;
+// }
+
+char ***gen_initial_grid(long long N, float density, int input_seed, int rank, int number_of_nodes) {
     int x, y, z;
     char ***grid;
 
+    int global_N = N * number_of_nodes;
     grid = (char ***) malloc(N * sizeof(char **));
     if (grid == NULL) {
         fprintf(stderr, "Failed to allocate memory for grid\n");
@@ -36,20 +118,22 @@ char ***gen_initial_grid(long long N, float density, int input_seed) {
 
     #pragma omp parallel for private(x, y, z) shared(grid, density, input_seed)
     for (x = 0; x < N; x++) {
-        grid[x] = (char **) malloc(N * sizeof(char *));
+        grid[x] = (char **) malloc(global_N * sizeof(char *));
         if (grid[x] == NULL) {
             fprintf(stderr, "Failed to allocate memory for grid\n");
             exit(1);
         }
 
-        grid[x][0] = (char *) calloc(N * N, sizeof(char));
+        grid[x][0] = (char *) calloc(global_N * global_N, sizeof(char));
         if (grid[x][0] == NULL) {
             fprintf(stderr, "Failed to allocate memory for grid\n");
             exit(1);
         }
 
-        for (y = 1; y < N; y++) {
-            grid[x][y] = grid[x][0] + y * N;
+        for (y = 1; y < global_N; y++) {
+            // fprintf(stdout, "rank=%d no loop antes\n", rank);
+            grid[x][y] = grid[x][0] + y * global_N;
+            // fprintf(stdout, "rank=%d no loop depois\n", rank);
         }
     }
 
@@ -57,24 +141,54 @@ char ***gen_initial_grid(long long N, float density, int input_seed) {
 
     init_r4uni(input_seed);
     // THREAD UNSAFE
-    for (x = 0; x < N; x++)
-        for (y = 0; y < N; y++)
-            for (z = 0; z < N; z++)
+    for (x = 0; x < global_N; x++)
+        for (y = 0; y < global_N; y++)
+            for (z = 0; z < global_N; z++)
                 if (r4_uni() < density) {
-                    grid[x][y][z] = (char)(r4_uni() * N_SPECIES) + 1;
-                    #pragma omp atomic
-                    species_counts[grid[x][y][z]]++;
-                    if (species_counts[grid[x][y][z]] > max_species_count_list[grid[x][y][z]]) 
-                    {   
-                        #pragma omp critical
-                        {
-                            max_species_count_list[grid[x][y][z]] = species_counts[grid[x][y][z]];
-                            max_generation[grid[x][y][z]] = 0;
+
+                    /**
+                    convert global X into local X
+                    example:
+                        - 4 nodes
+                        - this process rank = 1
+                        - global size = 100
+                        we wil only save values from index [25, 49]
+                        global X = 36
+                        local X = 36 - (25 * 1) = 11
+                    */
+                    int local_X = x - (N * rank);
+                    // fprintf(stdout, "rank=%d local_x=%d n=%lld\n", rank, local_X, N);
+                    if (x < upper_bound(rank, N) && x >= lower_bound(rank, N))
+                    {
+                        // fprintf(stdout, "entrou!! rank=%d local_x=%d\n", rank, local_X);
+                        grid[local_X][y][z] = (char)(r4_uni() * N_SPECIES) + 1;
+                        #pragma omp atomic
+                        species_counts[grid[local_X][y][z]]++;
+                        if (species_counts[grid[local_X][y][z]] > max_species_count_list[grid[local_X][y][z]]) 
+                        {   
+                            #pragma omp critical
+                            {
+                                max_species_count_list[grid[local_X][y][z]] = species_counts[grid[local_X][y][z]];
+                                max_generation[grid[local_X][y][z]] = 0;
+                            }
                         }
+                    }
+                    else
+                    {
+                        // we call it anyway so that the final seed is the same
+                        r4_uni();
                     }
                 }
     
     return grid;
+}
+
+void free_frame(char **frame, int global_N)
+{
+    if (frame == NULL)
+        return;
+    free(frame[0]);
+    free(frame);
 }
 
 void free_grid(char ***grid, int local_N) {
@@ -88,34 +202,53 @@ void free_grid(char ***grid, int local_N) {
         free(grid[x][0]);
         free(grid[x]);
     }
-
     free(grid);
 }
 
-int count_neighbors(char ***grid, int local_N, int x, int y, int z) {
+int count_neighbors(char ***grid, int local_N, int x, int y, int z, char **previous_adjacent_frame, char **next_adjacent_frame, int global_N) {
     int count = 0;
     int dx, dy, dz;
 
+    // fprintf(stderr, "count_neighbours rank %d\n", global_rank);
     for (dx = -1; dx <= 1; dx++) {
         for (dy = -1; dy <= 1; dy++) {
             for (dz = -1; dz <= 1; dz++) {
                 if (dx == 0 && dy == 0 && dz == 0)
                     continue;
                 int nx = (x + dx + local_N) % local_N;
-                int ny = (y + dy + local_N) % local_N;
-                int nz = (z + dz + local_N) % local_N;
-                if (grid[nx][ny][nz] != 0)
+                int ny = (y + dy + global_N) % global_N;
+                int nz = (z + dz + global_N) % global_N;
+                if (dx == 1 && x == local_N - 1)
+                {
+                    // fprintf(stderr, "next adjacent rank %d\n", global_rank);
+
+                    if (next_adjacent_frame[ny][nz] != 0)
+                        count++;
+                    // fprintf(stderr, "next adjacent AFTER rank %d\n", global_rank);
+                }
+                else if (dx == -1 && x == 0)
+                {
+                    // fprintf(stderr, "previous adjacent ny=%d nz=%d rank %d\n", ny, nz, global_rank);
+                    if (previous_adjacent_frame[ny][nz] != 0)
+                        count++;
+                    // fprintf(stderr, "previous adjacent after rank %d\n", global_rank);
+                }
+                else
+                {
+                    if (grid[nx][ny][nz] != 0)
                     count++;
+                }
             }
         }
     }
+    // fprintf(stderr, "count_neighbours END rank %d", global_rank);
 
     return count;
 }
 
-void evolve_cell(char ***grid, char ***next_grid, int local_N, int x, int y, int z, int generation, int count_per_generation[] ) {
+void evolve_cell(char ***grid, char ***next_grid, int local_N, int x, int y, int z, int generation, int count_per_generation[], char **previous_adjacent_frame, char **next_adjacent_frame, int global_N) {
     int species = grid[x][y][z];
-    int neighbor_count = count_neighbors(grid, local_N, x, y, z);
+    int neighbor_count = count_neighbors(grid, local_N, x, y, z, previous_adjacent_frame, next_adjacent_frame, global_N);
 
     if (species == 0) {  // Empty cell
         if (neighbor_count >= 7 && neighbor_count <= 10) {
@@ -126,10 +259,23 @@ void evolve_cell(char ***grid, char ***next_grid, int local_N, int x, int y, int
                         if (dx == 0 && dy == 0 && dz == 0)
                             continue;
                         int nx = (x + dx + local_N) % local_N;
-                        int ny = (y + dy + local_N) % local_N;
-                        int nz = (z + dz + local_N) % local_N;
-                        int neighbor_species = grid[nx][ny][nz];
-                        species_counts[neighbor_species]++;
+                        int ny = (y + dy + global_N) % global_N;
+                        int nz = (z + dz + global_N) % global_N;
+                        if (dx == 1 && x == local_N - 1)
+                        {
+                            int neighbor_species = next_adjacent_frame[ny][nz];
+                            species_counts[neighbor_species]++;
+                        }
+                        else if (dx == -1 && x == 0)
+                        {
+                            int neighbor_species = previous_adjacent_frame[ny][nz];
+                            species_counts[neighbor_species]++;
+                        }
+                        else
+                        {
+                            int neighbor_species = grid[nx][ny][nz];
+                            species_counts[neighbor_species]++;
+                        }
                     }
                 }
             }
@@ -156,22 +302,59 @@ void evolve_cell(char ***grid, char ***next_grid, int local_N, int x, int y, int
     count_per_generation[next_grid[x][y][z]]++;
 }
 
-void simulation(char ***grid, int local_N, int generations) {
-    char ***next_grid = gen_initial_grid(local_N, 0.0, 0);  // Temporary grid for next generation
+void send_frames_and_receive(char ***grid, char **previous_adjacent_frame, char **next_adjacent_frame, int local_N, int rank, int number_of_nodes)
+{
+    MPI_Request request;
+    int nextRank = (rank + 1) % number_of_nodes;
+    int previousRank = (rank - 1 + number_of_nodes) % number_of_nodes; 
+    int global_N = local_N * number_of_nodes;
+    MPI_Isend(&(grid[local_N - 1][0][0]), global_N * global_N, MPI_CHAR, nextRank, 0, MPI_COMM_WORLD, &request);
+    MPI_Isend(&(grid[0][0][0]), global_N * global_N, MPI_CHAR, previousRank, 0, MPI_COMM_WORLD, &request);
+    MPI_Recv(&(previous_adjacent_frame[0][0]), global_N * global_N, MPI_CHAR, previousRank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    MPI_Recv(&(next_adjacent_frame[0][0]), global_N * global_N, MPI_CHAR, nextRank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+}
+
+void printFrame(char **frame, int global_N)
+{
+    for (int y = 0; y < global_N; y++)
+    {
+        for (int z = 0; z < global_N; z++)
+        {
+            fprintf(stderr, "%d ", frame[y][z]);
+        }
+        fprintf(stderr, "\n");
+    }
+}
+
+void simulation(char ***grid, int local_N, int generations, int rank, int number_of_nodes) {
+    char ***next_grid = alocate_grid(local_N, number_of_nodes);  // Temporary grid for next generation
+
+    int global_N = local_N * number_of_nodes;
+    char **previous_adjacent_frame = allocate_frame(global_N);
+    char **next_adjacent_frame = allocate_frame(global_N);
 
     for (int gen = 1; gen <= generations; gen++) {
+        if (number_of_nodes > 1)
+        {
+            send_frames_and_receive(grid, previous_adjacent_frame, next_adjacent_frame, local_N, rank, number_of_nodes);
+            // if (rank == 0)
+            // {
+            //     printFrame(previous_adjacent_frame, global_N);
+            // }
+        }
+
         // Evolve each cell
         int global_count_per_generation[N_SPECIES + 1] = {0}; // Initialize a global array for reduction
-        
+        int root_count_per_generation[N_SPECIES + 1] = {0}; 
         #pragma omp parallel shared(grid, next_grid, local_N, gen) 
         {
             int private_count_per_generation[N_SPECIES + 1] = {0}; // Declare private array for each thread
 
             #pragma omp for collapse(3)
             for (int x = 0; x < local_N; x++) {
-                for (int y = 0; y < local_N; y++) {
-                    for (int z = 0; z < local_N; z++) {
-                        evolve_cell(grid, next_grid, local_N, x, y, z, gen, private_count_per_generation);
+                for (int y = 0; y < global_N; y++) {
+                    for (int z = 0; z < global_N; z++) {
+                        evolve_cell(grid, next_grid, local_N, x, y, z, gen, private_count_per_generation, previous_adjacent_frame, next_adjacent_frame, global_N);
                     }
                 }
             }
@@ -188,28 +371,45 @@ void simulation(char ***grid, int local_N, int generations) {
         // Copy next_grid back to grid for next generation
         #pragma omp parallel for
         for (int x = 0; x < local_N; x++) {
-            for (int y = 0; y < local_N; y++) {
-                for (int z = 0; z < local_N; z++) {
+            for (int y = 0; y < global_N; y++) {
+                for (int z = 0; z < global_N; z++) {
                     grid[x][y][z] = next_grid[x][y][z];
                 }
             }
         }
 
-        // Update max_species_count_list and max_generation using global_count_per_generation
-        #pragma omp parallel for
-        for (int i = 1; i <= N_SPECIES; i++) {
-            #pragma omp critical
-            {
-                if (global_count_per_generation[i] > max_species_count_list[i]) {
-                    max_species_count_list[i] = global_count_per_generation[i];
-                    max_generation[i] = gen;
+        for (int i = 0; i < N_SPECIES + 1 ; i++)
+        {
+            // fprintf(stderr, "global_counter_per_generation i=%d rank=%d value=%d\n", i, rank, global_count_per_generation[i]);
+        }
+        MPI_Reduce(global_count_per_generation, root_count_per_generation, N_SPECIES + 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+        for (int i = 0; i < N_SPECIES + 1 ; i++)
+        {
+            // fprintf(stderr, "root_count_per_generation i=%d rank=%d value=%d\n", i, rank, root_count_per_generation[i]);
+        }
+        if (rank == 0)
+        {
+            // Update max_species_count_list and max_generation using global_count_per_generation
+            #pragma omp parallel for
+            for (int i = 1; i <= N_SPECIES; i++) {
+                #pragma omp critical
+                {
+                    if (root_count_per_generation[i] > max_species_count_list[i]) {
+                        max_species_count_list[i] = root_count_per_generation[i];
+                        max_generation[i] = gen;
+                    }
                 }
             }
         }
+
     }
 
+    free_frame(previous_adjacent_frame, global_N);
+    free_frame(next_adjacent_frame, global_N);
+    //TODO: free adjacent frames
     free_grid(next_grid, local_N);
 }
+
 
 void print_result(int rank, int size) {
     // Print population statistics for each species
@@ -226,6 +426,7 @@ int main(int argc, char *argv[]) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
+    global_rank = rank;
     if (argc != 5) {
         if (rank == 0) {
             fprintf(stderr, "Usage: %s <generations> <cube_size> <density> <seed>\n", argv[0]);
@@ -250,30 +451,67 @@ int main(int argc, char *argv[]) {
     int local_N = global_N / size; // Size of the cube for each process
     char ***grid;
     
-    if (rank == 0) {
-        grid = gen_initial_grid(local_N, density, seed + rank); // Generate initial grid for each process
-    }
+    // fprintf(stdout, "rank=%d before\n", rank);
+    grid = gen_initial_grid(local_N, density, seed, rank, size); // Generate initial grid for each process
+    // fprintf(stdout, "rank=%d after\n", rank);
 
     // Scatter initial grid from root to all processes
     // MPI_Scatter(...);
+    // MPI_Scatter(assigned_sizes, 1, MPI_INT, &local_N, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
+    // fprintf(stdout, "rank = %d START\n", rank);
+    // for (int x = 0; x < local_N; x++)
+    // {
+    //     for (int y = 0; y < global_N; y++)
+    //     {
+    //         for (int z = 0; z < global_N; z++)
+    //         {
+    //             fprintf(stdout, "%d ", grid[x][y][z]);
+    //         }
+    //         fprintf(stdout, "\n");
+    //     }
+
+    // }
+    // fprintf(stdout, "rank = %d END\n", rank);
+
+
+
+    // MPI_Finalize();
+    // return 0;
     //MPI_Scatter(grid[0][0], local_N * local_N * local_N, MPI_CHAR, grid[0][0], local_N * local_N * local_N, MPI_CHAR, 0, MPI_COMM_WORLD);
 
-    MPI_Bcast(grid[0][0], local_N * local_N * local_N, MPI_CHAR, 0, MPI_COMM_WORLD);
+    // MPI_Bcast(grid[0][0], local_N * local_N * local_N, MPI_CHAR, 0, MPI_COMM_WORLD);
+    // fprintf(stderr, "depois\n");
 
     exec_time = -MPI_Wtime();
 
     // Simulate game of life
-    simulation(grid, local_N, generations);
+    simulation(grid, local_N, generations, rank, size);
 
     exec_time += MPI_Wtime();
 
-    MPI_Reduce(MPI_IN_PLACE, max_species_count_list, N_SPECIES + 1, MPI_INT, MPI_MAX, 0, MPI_COMM_WORLD);
-    MPI_Reduce(MPI_IN_PLACE, max_generation, N_SPECIES + 1, MPI_INT, MPI_MAX, 0, MPI_COMM_WORLD);
+    // MPI_Reduce(MPI_IN_PLACE, max_species_count_list, N_SPECIES + 1, MPI_INT, MPI_MAX, 0, MPI_COMM_WORLD);
+    // MPI_Reduce(MPI_IN_PLACE, max_generation, N_SPECIES + 1, MPI_INT, MPI_MAX, 0, MPI_COMM_WORLD);
 
     // Gather max_species_count_list and max_generation from all processes to root
     // MPI_Gather(...);
     //MPI_Gather(max_species_count_list, N_SPECIES + 1, MPI_INT, max_species_count_list, N_SPECIES + 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+    fprintf(stdout, "rank = %d START\n", rank);
+    for (int x = 0; x < local_N; x++)
+    {
+        for (int y = 0; y < global_N; y++)
+        {
+            for (int z = 0; z < global_N; z++)
+            {
+                fprintf(stdout, "%d ", grid[x][y][z]);
+            }
+            fprintf(stdout, "\n");
+        }
+
+    }
+    fprintf(stdout, "rank = %d END\n", rank);
+
 
     if (rank == 0) {
         fprintf(stderr, "%.1fs\n", exec_time);
