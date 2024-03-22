@@ -284,11 +284,15 @@ void printFrame(char **frame, int global_N) {
 void simulation(char ***grid, int local_N, int generations, int rank, int number_of_nodes) {
     char ***next_grid = gen_initial_grid(local_N, 0, seed, rank, number_of_nodes, NULL); // Temporary grid for next generation 
     int global_N = local_N * number_of_nodes;
-    char **previous_adjacent_frame = allocate_frame(global_N);
-    char **next_adjacent_frame = allocate_frame(global_N);
+    char **previous_adjacent_frame;
+    char **next_adjacent_frame;
 
     for (int gen = 1; gen <= generations; gen++) {
         if (number_of_nodes > 1) {
+            if (gen == 1) {
+                previous_adjacent_frame = allocate_frame(global_N);
+                next_adjacent_frame = allocate_frame(global_N);
+            }
             send_frames_and_receive(grid, previous_adjacent_frame, next_adjacent_frame, local_N, rank, number_of_nodes);
         } else {
             previous_adjacent_frame = grid[local_N - 1];
