@@ -24,18 +24,15 @@ float r4_uni() {
     return 0.5 + 0.2328306e-09 * (seed_in + (int) seed);
 }
 
-int lower_bound(int rank, int local_size)
-{
+int lower_bound(int rank, int local_size) {
     return rank*local_size;
 }
 
-int upper_bound(int rank, int local_size)
-{
+int upper_bound(int rank, int local_size) {
     return (rank + 1) * local_size;
 }
 
-char ***alocate_grid(long long N, int number_of_nodes)
-{
+char ***alocate_grid(long long N, int number_of_nodes) {
     int x, y;
     char ***grid;
 
@@ -64,14 +61,26 @@ char ***alocate_grid(long long N, int number_of_nodes)
             grid[x][y] = grid[x][0] + y * global_N;
         }
     }
+
     return grid;
 }
 
 char **allocate_frame(int global_N) {
-    char *data = (char *)calloc(global_N*global_N, sizeof(char));
-    char **frame= (char **)malloc(global_N*sizeof(char*));
-    for (char i=0; i<global_N; i++)
-        frame[i] = &(data[global_N*i]);
+    char **frame = (char **)malloc(global_N * sizeof(char *));
+    if (frame == NULL) {
+        fprintf(stderr, "Failed to allocate memory for frame\n");
+        exit(1);
+    }
+
+    char *data = (char *)calloc(global_N * global_N, sizeof(char));
+    if (data == NULL) {
+        fprintf(stderr, "Failed to allocate memory for data\n");
+        exit(1);
+    }
+
+    for (int i = 0; i < global_N; i++) {
+        frame[i] = data + i * global_N;
+    }
 
     return frame;
 }
@@ -141,8 +150,7 @@ char ***gen_initial_grid(long long N, float density, int input_seed, int rank, i
     return grid;
 }
 
-void free_frame(char **frame, int global_N)
-{
+void free_frame(char **frame, int global_N) {
     if (frame == NULL)
         return;
     free(frame[0]);
@@ -252,8 +260,7 @@ void evolve_cell(char ***grid, char ***next_grid, int local_N, int x, int y, int
     count_per_generation[next_grid[x][y][z]]++;
 }
 
-void send_frames_and_receive(char ***grid, char **previous_adjacent_frame, char **next_adjacent_frame, int local_N, int rank, int number_of_nodes)
-{
+void send_frames_and_receive(char ***grid, char **previous_adjacent_frame, char **next_adjacent_frame, int local_N, int rank, int number_of_nodes) {
     MPI_Request request;
     int nextRank = (rank + 1) % number_of_nodes;
     int previousRank = (rank - 1 + number_of_nodes) % number_of_nodes; 
@@ -264,12 +271,9 @@ void send_frames_and_receive(char ***grid, char **previous_adjacent_frame, char 
     MPI_Recv(&(next_adjacent_frame[0][0]), global_N * global_N, MPI_CHAR, nextRank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 }
 
-void printFrame(char **frame, int global_N)
-{
-    for (int y = 0; y < global_N; y++)
-    {
-        for (int z = 0; z < global_N; z++)
-        {
+void printFrame(char **frame, int global_N) {
+    for (int y = 0; y < global_N; y++) {
+        for (int z = 0; z < global_N; z++) {
             fprintf(stderr, "%d ", frame[y][z]);
         }
         fprintf(stderr, "\n");
@@ -277,19 +281,15 @@ void printFrame(char **frame, int global_N)
 }
 
 void simulation(char ***grid, int local_N, int generations, int rank, int number_of_nodes) {
-    char ***next_grid = alocate_grid(local_N, number_of_nodes);  // Temporary grid for next generation
-
+    char ***next_grid = gen_initial_grid(local_N, 0, seed, rank, number_of_nodes, NULL); // Temporary grid for next generation 
     int global_N = local_N * number_of_nodes;
     char **previous_adjacent_frame = allocate_frame(global_N);
     char **next_adjacent_frame = allocate_frame(global_N);
 
     for (int gen = 1; gen <= generations; gen++) {
-        if (number_of_nodes > 1)
-        {
+        if (number_of_nodes > 1) {
             send_frames_and_receive(grid, previous_adjacent_frame, next_adjacent_frame, local_N, rank, number_of_nodes);
-        }
-        else
-        {
+        } else {
             previous_adjacent_frame = grid[local_N - 1];
             next_adjacent_frame = grid[0];
         }
@@ -297,6 +297,7 @@ void simulation(char ***grid, int local_N, int generations, int rank, int number
         // Evolve each cell
         int global_count_per_generation[N_SPECIES + 1] = {0}; // Initialize a global array for reduction
         int root_count_per_generation[N_SPECIES + 1] = {0}; 
+        
         #pragma omp parallel shared(grid, next_grid, local_N, gen) 
         {
             int private_count_per_generation[N_SPECIES + 1] = {0}; // Declare private array for each thread
@@ -414,6 +415,7 @@ int main(int argc, char *argv[]) {
             }
         }
     }
+    
     exec_time = -MPI_Wtime();
 
     // Simulate game of life
