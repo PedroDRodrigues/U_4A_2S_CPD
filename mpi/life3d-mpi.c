@@ -269,6 +269,7 @@ void send_frames_and_receive(char ***grid, char **previous_adjacent_frame, char 
     MPI_Isend(&(grid[0][0][0]), global_N * global_N, MPI_CHAR, previousRank, 0, MPI_COMM_WORLD, &request);
     MPI_Recv(&(previous_adjacent_frame[0][0]), global_N * global_N, MPI_CHAR, previousRank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
     MPI_Recv(&(next_adjacent_frame[0][0]), global_N * global_N, MPI_CHAR, nextRank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    MPI_Barrier(MPI_COMM_WORLD);
 }
 
 void printFrame(char **frame, int global_N) {
