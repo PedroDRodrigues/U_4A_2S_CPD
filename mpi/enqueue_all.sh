@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-sbatch script_16_10.sh
-sbatch script_16_1000.sh
-sbatch script_16_200.sh
-sbatch script_16_3.sh
 sbatch script_1_10.sh
 sbatch script_1_1000.sh
 sbatch script_1_200.sh

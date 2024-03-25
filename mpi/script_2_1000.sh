@@ -8,5 +8,6 @@
 #SBATCH --nodes=2
 #SBATCH --cpus-per-task=4
 #SBATCH -x lab2p[1-20]
+#SBATCH -C lab4
 
 srun ./life3d-mpi 1000 64 0.4 0
